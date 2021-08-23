@@ -7,7 +7,7 @@ from aioguardian import Client
 from aioguardian.errors import GuardianError
 import voluptuous as vol
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_FILENAME, CONF_PORT, CONF_URL
 from homeassistant.core import HomeAssistant, callback
@@ -91,7 +91,11 @@ class ValveControllerSwitch(ValveControllerEntity, SwitchEntity):
     ) -> None:
         """Initialize."""
         super().__init__(
-            entry, coordinators, "valve", "Valve Controller", None, "mdi:water"
+            entry,
+            coordinators,
+            SwitchEntityDescription(
+                key="valve", name="Valve Controller", icon="mdi:water"
+            ),
         )
 
         self._attr_is_on = True
@@ -201,7 +205,7 @@ class ValveControllerSwitch(ValveControllerEntity, SwitchEntity):
         except GuardianError as err:
             LOGGER.error("Error while upgrading firmware: %s", err)
 
-    async def async_turn_off(self, **kwargs: dict[str, Any]) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the valve off (closed)."""
         try:
             async with self._client:
@@ -213,7 +217,7 @@ class ValveControllerSwitch(ValveControllerEntity, SwitchEntity):
         self._attr_is_on = False
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: dict[str, Any]) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the valve on (open)."""
         try:
             async with self._client:
