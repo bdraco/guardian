@@ -9,6 +9,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ENTITY_CATEGORY_DIAGNOSTIC
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -21,7 +22,6 @@ from .const import (
     CONF_UID,
     DATA_COORDINATOR,
     DATA_COORDINATOR_PAIRED_SENSOR,
-    DATA_UNSUB_DISPATCHER_CONNECT,
     DOMAIN,
     SIGNAL_PAIRED_SENSOR_COORDINATOR_ADDED,
 )
@@ -36,6 +36,7 @@ SENSOR_DESCRIPTION_AP_ENABLED = BinarySensorEntityDescription(
     key=SENSOR_KIND_AP_INFO,
     name="Onboard AP Enabled",
     device_class=DEVICE_CLASS_CONNECTIVITY,
+    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
 )
 SENSOR_DESCRIPTION_LEAK_DETECTED = BinarySensorEntityDescription(
     key=SENSOR_KIND_LEAK_DETECTED,
@@ -43,14 +44,17 @@ SENSOR_DESCRIPTION_LEAK_DETECTED = BinarySensorEntityDescription(
     device_class=DEVICE_CLASS_MOISTURE,
 )
 SENSOR_DESCRIPTION_MOVED = BinarySensorEntityDescription(
-    key=SENSOR_KIND_MOVED, name="Recently Moved", device_class=DEVICE_CLASS_MOVING
+    key=SENSOR_KIND_MOVED,
+    name="Recently Moved",
+    device_class=DEVICE_CLASS_MOVING,
+    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
 )
 
-PAIRED_SENSOR_SENSORS: tuple[BinarySensorEntityDescription, ...] = (
+PAIRED_SENSOR_DESCRIPTIONS = (
     SENSOR_DESCRIPTION_LEAK_DETECTED,
     SENSOR_DESCRIPTION_MOVED,
 )
-VALVE_CONTROLLER_SENSORS: tuple[BinarySensorEntityDescription, ...] = (
+VALVE_CONTROLLER_DESCRIPTIONS = (
     SENSOR_DESCRIPTION_AP_ENABLED,
     SENSOR_DESCRIPTION_LEAK_DETECTED,
 )
@@ -64,18 +68,19 @@ async def async_setup_entry(
     @callback
     def add_new_paired_sensor(uid: str) -> None:
         """Add a new paired sensor."""
-        coordinator = hass.data[DOMAIN][DATA_COORDINATOR_PAIRED_SENSOR][entry.entry_id][
+        coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR_PAIRED_SENSOR][
             uid
         ]
 
-        entities = []
-        for description in PAIRED_SENSOR_SENSORS:
-            entities.append(PairedSensorBinarySensor(entry, coordinator, description))
-
-        async_add_entities(entities)
+        async_add_entities(
+            [
+                PairedSensorBinarySensor(entry, coordinator, description)
+                for description in PAIRED_SENSOR_DESCRIPTIONS
+            ]
+        )
 
     # Handle adding paired sensors after HASS startup:
-    hass.data[DOMAIN][DATA_UNSUB_DISPATCHER_CONNECT][entry.entry_id].append(
+    entry.async_on_unload(
         async_dispatcher_connect(
             hass,
             SIGNAL_PAIRED_SENSOR_COORDINATOR_ADDED.format(entry.data[CONF_UID]),
@@ -83,22 +88,24 @@ async def async_setup_entry(
         )
     )
 
-    sensors: list[PairedSensorBinarySensor | ValveControllerBinarySensor] = []
-
     # Add all valve controller-specific binary sensors:
-    for description in VALVE_CONTROLLER_SENSORS:
-        sensors.append(
-            ValveControllerBinarySensor(
-                entry, hass.data[DOMAIN][DATA_COORDINATOR][entry.entry_id], description
-            )
+    sensors: list[PairedSensorBinarySensor | ValveControllerBinarySensor] = [
+        ValveControllerBinarySensor(
+            entry, hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR], description
         )
+        for description in VALVE_CONTROLLER_DESCRIPTIONS
+    ]
 
     # Add all paired sensor-specific binary sensors:
-    for coordinator in hass.data[DOMAIN][DATA_COORDINATOR_PAIRED_SENSOR][
-        entry.entry_id
-    ].values():
-        for description in PAIRED_SENSOR_SENSORS:
-            sensors.append(PairedSensorBinarySensor(entry, coordinator, description))
+    sensors.extend(
+        [
+            PairedSensorBinarySensor(entry, coordinator, description)
+            for coordinator in hass.data[DOMAIN][entry.entry_id][
+                DATA_COORDINATOR_PAIRED_SENSOR
+            ].values()
+            for description in PAIRED_SENSOR_DESCRIPTIONS
+        ]
+    )
 
     async_add_entities(sensors)
 
@@ -120,9 +127,9 @@ class PairedSensorBinarySensor(PairedSensorEntity, BinarySensorEntity):
     @callback
     def _async_update_from_latest_data(self) -> None:
         """Update the entity."""
-        if self._description.key == SENSOR_KIND_LEAK_DETECTED:
+        if self.entity_description.key == SENSOR_KIND_LEAK_DETECTED:
             self._attr_is_on = self.coordinator.data["wet"]
-        elif self._description.key == SENSOR_KIND_MOVED:
+        elif self.entity_description.key == SENSOR_KIND_MOVED:
             self._attr_is_on = self.coordinator.data["moved"]
 
 
@@ -142,15 +149,15 @@ class ValveControllerBinarySensor(ValveControllerEntity, BinarySensorEntity):
 
     async def _async_continue_entity_setup(self) -> None:
         """Add an API listener."""
-        if self._description.key == SENSOR_KIND_AP_INFO:
+        if self.entity_description.key == SENSOR_KIND_AP_INFO:
             self.async_add_coordinator_update_listener(API_WIFI_STATUS)
-        elif self._description.key == SENSOR_KIND_LEAK_DETECTED:
+        elif self.entity_description.key == SENSOR_KIND_LEAK_DETECTED:
             self.async_add_coordinator_update_listener(API_SYSTEM_ONBOARD_SENSOR_STATUS)
 
     @callback
     def _async_update_from_latest_data(self) -> None:
         """Update the entity."""
-        if self._description.key == SENSOR_KIND_AP_INFO:
+        if self.entity_description.key == SENSOR_KIND_AP_INFO:
             self._attr_available = self.coordinators[
                 API_WIFI_STATUS
             ].last_update_success
@@ -164,7 +171,7 @@ class ValveControllerBinarySensor(ValveControllerEntity, BinarySensorEntity):
                     )
                 }
             )
-        elif self._description.key == SENSOR_KIND_LEAK_DETECTED:
+        elif self.entity_description.key == SENSOR_KIND_LEAK_DETECTED:
             self._attr_available = self.coordinators[
                 API_SYSTEM_ONBOARD_SENSOR_STATUS
             ].last_update_success
