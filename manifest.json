@@ -1,8 +1,8 @@
 {
   "domain": "guardian",
-  "version": "0.4.2",
   "name": "Elexa Guardian",
   "config_flow": true,
+  "version": "0.4.2",
   "documentation": "https://www.home-assistant.io/integrations/guardian",
   "requirements": ["aioguardian==2021.11.0"],
   "zeroconf": ["_api._udp.local."],
@@ -21,5 +21,6 @@
         "hostname": "guardian*",
         "macaddress": "30AEA4*"
       }
-  ]
+  ],
+  "loggers": ["aioguardian"]
 }
